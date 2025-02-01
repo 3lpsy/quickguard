@@ -26,7 +26,7 @@ The container drops permissions so use `--userns=keep-id`
 $ podman run --userns=keep-id -v /path/to/wg.conf:/data/wg.conf quickguard -w /data/wg.conf
 ```
 # Automatically Updating Systemd
-I wrote this so I can easily convert Wireguard VPN configurations to Netdev configurations for `systemd-network`. I would not recommend running this as root. You can review quickguard.sh and customize it to your needs. However, note that `QUICKGUARD_ARGS` cannot contain spaces so if customizing `--allow-ips`, which is useful for tailscale, you shoud omit the spaces between the ranges.
+I wrote this so I can easily convert Wireguard VPN configurations to Netdev configurations for `systemd-network`. I would not recommend running this as root. You can review quickguard.sh and customize it to your needs. However, note that `QUICKGUARD_ARGS` cannot contain spaces. So if customizing `--allow-ips`, which is useful for tailscale, you shoud omit the spaces between the ranges.
 
 # Usage
 ```
