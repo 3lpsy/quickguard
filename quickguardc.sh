@@ -1,4 +1,5 @@
 #!/bin/bash
+# Old and no longer used
 set -e
 set -o pipefail
 
