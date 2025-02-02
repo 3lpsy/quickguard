@@ -8,14 +8,16 @@ This simple script will parse Wireguard files via a hacky ConfigParser setup and
 I use `systemd-networkd`, `tailscale` and a Wireguard VPN so this is what I use:
 
 ```bash
-sudo python3 quickguard.py -f 0x8888 -a '0.0.0.0/2,64.0.0.0/3,96.0.0.0/6,100.0.0.0/10,100.128.0.0/9,101.0.0.0/8,102.0.0.0/7,104.0.0.0/5,112.0.0.0/4,128.0.0.0/1' --overwrite --chown-file --reload -w ~/path/to/vpnsdir/vpn.conf -o /etc/systemd/network/99-wg-vpn.netdev
+ALLOWED_IPS="0.0.0.0/2,64.0.0.0/3,96.0.0.0/6,100.0.0.0/10,100.128.0.0/9,101.0.0.0/8,102.0.0.0/7,104.0.0.0/5,112.0.0.0/4,128.0.0.0/1"
+sudo python3 quickguard.py -f 0x8888 -a $ALLOWED_IPS --overwrite --chown-file --reload -w ~/path/to/vpnsdir/vpn.conf -o /etc/systemd/network/99-wg-vpn.netdev
 ```
 Or for switching easily, I have the following script:
 
 ```bash
 #!/bin/bash
 QUICKGUARD_VPN_DIR="$HOME/path/to/your/vpnconfs"
-sudo python3 quickguard.py -f 0x8888 -a '0.0.0.0/2,64.0.0.0/3,96.0.0.0/6,100.0.0.0/10,100.128.0.0/9,101.0.0.0/8,102.0.0.0/7,104.0.0.0/5,112.0.0.0/4,128.0.0.0/1' --overwrite --chown-file --reload -w $(find "$QUICKGUARD_VPN_DIR" -type f -name '*.conf' | fzf --prompt="Select VPN config > ") -o /etc/systemd/network/99-wg-vpn.netdev
+ALLOWED_IPS="0.0.0.0/2,...omitted..."
+sudo python3 quickguard.py -f 0x8888 -a "$ALLOWED_IPS" --overwrite --chown-file --reload -w $(find "$QUICKGUARD_VPN_DIR" -type f -name '*.conf' | fzf --prompt="Select VPN config > ") -o /etc/systemd/network/99-wg-vpn.netdev
 ```
 
 ## Case Sensitivity
