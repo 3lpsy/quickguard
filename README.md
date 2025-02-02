@@ -21,19 +21,19 @@ sudo python3 quickguard.py -f 0x8888 -a "$ALLOWED_IPS" --overwrite --chown-file 
 ```
 
 ## Case Sensitivity
-Case sensitivity matters. I based this off of what my VPN provider was using so adjust as appropriate until a more flexible approache is added.
+Case sensitivity matters. I based this off of what my VPN provider was using so adjust as appropriate until a more flexible approach is added.
 
 ## Output
 All error messages are written to stderr by default with the netdev file being written to `stdout` by default. Additionally, Wireguard configurations can be writted in `stdin`.
 
 ## Reloading
-The only reloading supported is calling `systemd-networkd` via `python-dbus`
+The only reloading supported is calling `systemd-networkd` via `python-dbus`. This is optional and you don't need `python-dbus` to generate the NetDev files.
 
 ## Config Parser
 Wireguard config files and NetDev files are `.ini` like but can have multiple entires such as `Peer` and `WireguardPeer`. `ConfigParser` does not like this. There's two main hacks in the script to permit the usage of `ConfigParser` with duplicate section names. The first uses a custom `dict` type. The second overwrites the `_name` property of the `SectionProxy` classes. This is why the `render` function just uses a separate `ConfigParser` for each section for laziness purposes. If extending, just know that many `ConfigParser` functions may be broken. If you want to use an external library, you may consider [wgconfig](https://www.github.com/towalink/wgconfig). Since I may want to run this as root, I tried to only use standard libraries for this script.
 
 # Containerization
-This script used to use an external library (`wgconfig`) so I built a container for it. It does not use any external libraries anymore (except optionally `python-dbus`) but if you wish to use containerization, you should review the following. If not reloading, containerization is probably unnecessary as `python-dbus` can be installed via your system package repo. I used `podman` so things like handling `stdin` or file permissions (the user is dropped in the container) may not apply if using `docker`.
+This script previously used an external library (`wgconfig`) so I built a container for it. It does not use any external libraries anymore (except optionally `python-dbus`) but if you wish to use containerization (which I do not recommend), you should review the following. If not reloading, containerization is probably unnecessary. Even so, `python-dbus` can be installed via your system package repo anyways. I used `podman` so things like handling `stdin` or file permissions (the user is dropped in the container) may not apply if using `docker`.
 
 ## Build Container
 ```
@@ -53,8 +53,8 @@ The container drops permissions so use `--userns=keep-id`
 ```
 $ podman run --userns=keep-id -v /path/to/wg.conf:/data/wg.conf quickguard -w /data/wg.conf
 ```
-# Automatically Updating Systemd
-You can review `quickguardc.sh` and customize it to your needs.  I wrote this so I can easily convert Wireguard VPN configurations to Netdev configurations for `systemd-network`. I would not recommend running this as root. However, note that `QUICKGUARD_ARGS` cannot contain spaces. So if customizing `--allow-ips`, which is useful for tailscale, you shoud omit the spaces between the ranges.
+## Automatically Updating Systemd
+While I don't use it anymore, you can review `quickguardc.sh` and customize it to your needs. Note that `QUICKGUARD_ARGS` cannot contain spaces. So if customizing `--allow-ips`, which is useful for tailscale, you shoud omit the spaces between the ranges.
 
 # Usage
 ```
