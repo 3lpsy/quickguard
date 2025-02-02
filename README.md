@@ -33,7 +33,7 @@ The only reloading supported is calling `systemd-networkd` via `python-dbus`
 Wireguard config files and NetDev files are `.ini` like but can have multiple entires such as `Peer` and `WireguardPeer`. `ConfigParser` does not like this. There's two main hacks in the script to permit the usage of `ConfigParser` with duplicate section names. The first uses a custom `dict` type. The second overwrites the `_name` property of the `SectionProxy` classes. This is why the `render` function just uses a separate `ConfigParser` for each section for laziness purposes. If extending, just know that many `ConfigParser` functions may be broken. If you want to use an external library, you may consider [wgconfig](https://www.github.com/towalink/wgconfig). Since I may want to run this as root, I tried to only use standard libraries for this script.
 
 # Containerization
-This script used to use an external library (`wgconfig`) so I built a container for it. It does not anymore but if you wish to use containerization, you should review the following. I used `podman` so things like handling `stdin` or file permissions (the user is dropped in the container) may not apply if using `docker`.
+This script used to use an external library (`wgconfig`) so I built a container for it. It does not use any external libraries anymore (except optionally `python-dbus`) but if you wish to use containerization, you should review the following. If not reloading, containerization is probably unnecessary as `python-dbus` can be installed via your system package repo. I used `podman` so things like handling `stdin` or file permissions (the user is dropped in the container) may not apply if using `docker`.
 
 ## Build Container
 ```
