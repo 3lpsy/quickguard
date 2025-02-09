@@ -16,7 +16,7 @@ export QUICKGUARD_OUTPUT="/etc/systemd/network/99-wg-vpn.netdev"
 sudo -E python3 quickguard.py --auto --overwrite --chown-file --reload
 ```
 
-The above environment variables are the only ones supported at the moment.
+You can review `quickguard.sh` for a way to elevate privileges if you want to quickly run from a task runner like `wofi`. The above environment variables are the only ones supported at the moment.
 
 ### History
 The script will attempt to track the last file used when using `--auto` in a `history` file. This will be an `$XDG_DATA_HOME/quickguard/history`. If all potential files in the VPN directory have been used previously, the history is cleared. You can disable history with `--no-history` it will neither read the file nor write to it.

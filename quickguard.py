@@ -12,6 +12,9 @@ from pathlib import Path
 from typing import Any, TextIO
 import random
 
+# for debugging elevation
+DEBUG_LOG=False
+
 def get_target_wg(args: Namespace, rerun: bool | None = False) -> Path|None:
     if args.wg:
         return Path(args.wg)
@@ -99,7 +102,9 @@ def eprint(*args: Any, **kwargs: Any) -> None:  # noqa: ANN401
     if not kwargs:
         kwargs = {}
     print(*args, file=sys.stderr, **kwargs)
-
+    if DEBUG_LOG:
+        with open('/tmp/quickguard.txt', 'a') as file:
+            file.write(f"{args[0]}\n")
 
 # fp should be in append mode
 def render(netdev: dict, wireguard: dict, peers: list[dict], fp: TextIO) -> None:
@@ -114,6 +119,8 @@ def render(netdev: dict, wireguard: dict, peers: list[dict], fp: TextIO) -> None
 
 
 def main() -> None:
+    if DEBUG_LOG:
+        Path("/tmp/quickguard.txt").write_text("")
     parser = ArgumentParser("Quickguard")
     parser.add_argument("-w", "--wg", help="wireguard file")
     parser.add_argument("-n", "--name", help="netdev name", default="wg0")
