@@ -4,12 +4,70 @@ import grp
 import os
 import pwd
 import sys
-from argparse import ArgumentParser
+from argparse import ArgumentParser, Namespace
 from collections import OrderedDict
 from configparser import ConfigParser, SectionProxy
 from io import StringIO
 from pathlib import Path
 from typing import Any, TextIO
+import random
+
+def get_target_wg(args: Namespace, rerun: bool | None = False) -> Path|None:
+    if args.wg:
+        return Path(args.wg)
+    elif args.auto:
+        wg_dirs_opt = args.vpn_dir or os.getenv("QUICKGUARD_VPN_DIR") or ""
+        if not wg_dirs_opt:
+            eprint("[!] Auto swapping requires a VPN directory")
+            sys.exit(1)
+        wg_dirs = Path(wg_dirs_opt)
+        wgs = [f.name for f in wg_dirs.iterdir() if f.is_file()]
+        if not wgs:
+            eprint(f"[!] No wireguard configs found in vpn dir: {wg_dirs}")
+            sys.exit(1)
+        history = []
+        history_path = get_data_home().joinpath("quickguard").joinpath("history")
+        if not args.no_history:
+            history_path.parent.mkdir(parents=True, exist_ok=True)
+            history_path.touch(exist_ok=True)
+            history = [line.strip() for line in history_path.open()]
+
+        # loaded history, choose one not in
+        random.shuffle(wgs)
+        for target in wgs:
+            if target not in history: # will be empty if no_history
+                # save chosen target
+                if not args.no_history:
+                    history_path.open('a').write(f"{target}\n")
+                eprint(f"[*] Auto configuration: {target}")
+                return wg_dirs.joinpath(target)
+        if rerun:
+            eprint(f"[!] Unable to find a target in directory even after clearing history: Probably bug")
+            eprint(f"[!] VPN Dir: {wg_dirs}")
+            eprint(f"[!] History Path: {history_path}")
+            sys.exit(1)
+        # have not found a target not in history
+        if not args.no_history:
+            eprint(f"[-] Cleaning history")
+            get_data_home().joinpath("quickguard").joinpath("history").write_text("")
+        return get_target_wg(args, True) # lazy
+    return None # maybe stdin
+
+def get_data_home() -> Path:
+    xdg_data_home = os.environ.get("XDG_DATA_HOME")
+    if xdg_data_home:
+        return Path(xdg_data_home)
+    if os.name == "nt":
+        local_app_data = os.environ.get("LOCALAPPDATA")
+        if local_app_data:
+            return Path(local_app_data)
+        app_data = os.environ.get("APPDATA")
+        if app_data:
+            return Path(app_data)
+        return Path.home()
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support"
+    return Path.home() / ".local" / "share"
 
 
 # Multiple Peers Can Exist
@@ -61,10 +119,10 @@ def main() -> None:
     parser.add_argument("-n", "--name", help="netdev name", default="wg0")
     parser.add_argument("-k", "--kind", help="netdev kind", default="wireguard")
     parser.add_argument("-d", "--description", help="netdev description", default="Wireguard tunnel")
-    parser.add_argument("-f", "--firewall-mask", help="netdev firewall mask", default="0x8888")
-    parser.add_argument("-F", "--no-firewall-mask", help="do not include netdev firewall mask", action="store_true")
-    parser.add_argument("-a", "--allowed-ips", help="allowed IPs to override")
-    parser.add_argument("-o", "--output", help="output location, will fail if it exists and --overwrite is not set")
+    parser.add_argument("-f", "--firewall-mask", help="netdev firewall mask such as '0x8888'")
+    parser.add_argument("-F", "--no-firewall-mask", help="do not include netdev firewall mask (QUICKGUARD_MASK", action="store_true")
+    parser.add_argument("-a", "--allowed-ips", help="allowed IPs to override (QUICKGUARD_ALLOWED_IPS")
+    parser.add_argument("-o", "--output", help="output location, will fail if it exists and --overwrite is not set(QUICKGUARD_OUTPUT)")
     parser.add_argument(
         "-O",
         "--overwrite",
@@ -74,17 +132,22 @@ def main() -> None:
     parser.add_argument("-c", "--chown-file", action="store_true", help="change ownership of file if running as root")
     parser.add_argument("-C", "--chown-user", help="user:group to chown to", default="systemd-network:systemd-network")
     parser.add_argument("-r", "--reload", help="reload via dbus if it exists", action="store_true")
+    parser.add_argument("-A", "--auto", help="auto swap via VPN directory, requires -W or QUICKGUARD_VPN_DIR", action="store_true")
+    parser.add_argument("-W", "--vpn-dir", help="vpns directory (QUICKGUARD_VPN_DIR)", type=str)
+    parser.add_argument("-H", "--no-history", help="don't save history of last auto swapped vpn", action="store_true")
 
     args = parser.parse_args()
     wg = ConfigParser(defaults=None, dict_type=MultiSectionDict, strict=False)
     wg.optionxform = str
-    if args.wg:
-        wgp = Path(args.wg)
-        if not wgp.exists():
-            eprint(f"[!] Wireguard file does not exist: {args.wg}")
+
+    wg_target = get_target_wg(args)
+
+    if wg_target:
+        if not wg_target.exists():
+            eprint(f"[!] Wireguard file does not exist: {wg_target}")
             sys.exit(1)
-        eprint(f"Parsing Wireguard configuration file: {wgp.resolve()}")
-        wg.read_file(wgp.open())
+        eprint(f"[*] Parsing Wireguard configuration file: {wg_target.resolve()}")
+        wg.read_file(wg_target.open())
     elif not sys.stdin.isatty():
         # Need to pass -i to podman for stdin
         stdin = sys.stdin.read()
@@ -94,8 +157,21 @@ def main() -> None:
         wg.read_file(StringIO(stdin))
     else:
         parser.print_help()
-        eprint("[!] No wireguard file provided via --wg or stdin")
+        eprint("[!] No wireguard file provided via --wg, stdin, or via auto")
         sys.exit(1)
+
+    # resolve args vs env
+    mask= args.firewall_mask or os.getenv("QUICKGUARD_MASK") or ""
+    if mask:
+        eprint(f"[*] Custom firewall mask: {mask}")
+    allowed_ips = args.allowed_ips or os.getenv("QUICKGUARD_ALLOWED_IPS") or ""
+    if allowed_ips:
+        eprint(f"[*] Custom allowed IPs: {allowed_ips}")
+    output = args.output or os.getenv("QUICKGUARD_OUTPUT") or ""
+    if output:
+        eprint(f"[*] Custom output: {output}")
+
+    # get interface_key an ensure only one exist
     interface_key = ""
     for section in wg.sections():
         if section.startswith("Interface"):
@@ -107,6 +183,8 @@ def main() -> None:
     if not interface_key:
         eprint("[!] Could not find Interface section in configuration")
         sys.exit(1)
+
+    # build interface
     # At this point we know Interface exists
     # The SectionProxy holds it's real name Interface but ConfigParser has unique name
     # Just overwrite and grab data
@@ -120,6 +198,7 @@ def main() -> None:
     else:
         private_key = interface["PrivateKey"]
 
+    # Ensure perr exists
     peer_keys = [sn for sn in wg.sections() if sn.startswith("Peer")]
     if not peer_keys:
         eprint("[!] No Peer keys found in Wireguard configuration")
@@ -134,8 +213,9 @@ def main() -> None:
     wireguard = {
         "PrivateKey": private_key,
     }
-    if args.firewall_mask:
-        wireguard["FirewallMark"] = args.firewall_mask
+    if mask:
+        wireguard["FirewallMark"] = mask
+
     peers: list[dict] = []
     for peer_key in peer_keys:
         # Original _name is Peer, need Peer1, Peer2 etc
@@ -143,7 +223,8 @@ def main() -> None:
         peer_section._name = peer_key
         peer = dict(peer_section)
         wireguard_peer = {}
-        allowed_ips = args.allowed_ips
+        if allowed_ips and "AllowedIPs" in peer:
+            eprint(f"[!] AllowedIPs found in configuration. Custom allowed IPs will be used instead.")
         if not allowed_ips and "AllowedIPs" in peer:
             allowed_ips = peer["AllowedIPs"]
         if allowed_ips:
@@ -154,15 +235,15 @@ def main() -> None:
             wireguard_peer["Endpoint"] = peer["Endpoint"]
         peers.append(wireguard_peer)
 
-    if args.output:
-        op = Path(args.output)
+    if output:
+        op = Path(output)
         if op.exists() and not args.overwrite:
-            eprint(f"[!] Output file exists and overwrite is not set: {args.output}")
+            eprint(f"[!] Output file exists and overwrite is not set: {output}")
             sys.exit(1)
         if not op.exists():
             op.touch()
         # If writing to file do not care about stderr
-        eprint(f"Writing netdev to file: {args.output}")
+        eprint(f"[*] Writing netdev to file: {output}")
         op.write_text("")
         render(netdev, wireguard, peers, op.open("+a"))
         if args.chown_file:
@@ -182,13 +263,13 @@ def main() -> None:
                 cuid = pwd.getpwnam(user).pw_uid
                 # use default group or custom group
                 cgid = op.stat().st_gid if not group else grp.getgrnam(group).gr_gid
-                eprint(f"Changing ownership of output to: {user}({cuid})/{group}({cgid})")
+                eprint(f"[*] Changing ownership of output to: {user}({cuid})/{group}({cgid})")
                 os.chown(op, cuid, cgid)
             except PermissionError:
                 eprint("[!]Permission denied - cannot change ownership")
                 sys.exit(1)
             except (OSError, KeyError) as e:
-                eprint(f"Error changing ownership: {e}")
+                eprint(f"[!] Error changing ownership: {e}")
                 sys.exit(1)
 
     else:
@@ -197,18 +278,28 @@ def main() -> None:
     if args.reload:
         try:
             import dbus
+            try:
+                if os.getuid() != 0:
+                    eprint("[!] Not root user. Attempting to reliad anyways")
+                # Connect to the system bus
+                bus = dbus.SystemBus()
+                networkd_obj = bus.get_object("org.freedesktop.network1", "/org/freedesktop/network1")
+                networkd_iface = dbus.Interface(networkd_obj, "org.freedesktop.network1.Manager")
+                networkd_iface.Reload()
+                eprint("[*] Reload triggered for systemd-networkd")
 
-            # Connect to the system bus
-            bus = dbus.SystemBus()
-            # Get the networkd object from the correct service and object path
-            networkd_obj = bus.get_object("org.freedesktop.network1", "/org/freedesktop/network1")
-            # Use the correct Manager interface which provides the Reload method
-            networkd_iface = dbus.Interface(networkd_obj, "org.freedesktop.network1.Manager")
-            # Call the Reload method
-            networkd_iface.Reload()
-            eprint("Reloaded triggered for systemd-networkd")
+                resolved_obj = bus.get_object("org.freedesktop.resolve1", "/org/freedesktop/resolve1")
+                resolved_iface = dbus.Interface(resolved_obj, "org.freedesktop.resolve1.Manager")
+                resolved_iface.FlushCaches()  # Optional: flush DNS caches
+                resolved_iface.ResetStatistics()
+                eprint("[*] Cache flushed for systemd-resolved")
+            except dbus.exceptions.DBusException as e:
+                eprint("[!] Error reloading with dbus. Either not permitted or not using systemd-{networkd,resolved}")
+                sys.exit(1)
         except ImportError:
             eprint("[!] Python dbus package not installed")
+        except Exception as e:
+            print(type(e))
 
 
 if __name__ == "__main__":
